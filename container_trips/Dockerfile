@@ -1,11 +1,13 @@
 FROM veyorokonwsri/trips:latest
 
 # Go to $TRIPS_BASE/src and install TRIPS
-COPY ./step /vagrant
+
+RUN git clone https://github.com/wdebeaum/step.git
+RUN mv step /vagrant
 
 WORKDIR /vagrant/src
 
-VOLUME ./volume
+VOLUME /vagrant
 
 RUN cd /vagrant/src && \
   ./configure --with-lisp=sbcl && \
