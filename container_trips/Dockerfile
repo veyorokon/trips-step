@@ -5,6 +5,8 @@ COPY ./step /vagrant
 
 WORKDIR /vagrant/src
 
+VOLUME ./volume
+
 RUN cd /vagrant/src && \
   ./configure --with-lisp=sbcl && \
   make clean
