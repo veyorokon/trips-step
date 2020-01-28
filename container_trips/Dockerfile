@@ -15,5 +15,4 @@ RUN find . -name '*.fasl' -delete && \
   make && \
   make install
 
-
 ENTRYPOINT ["/bin/bash"]

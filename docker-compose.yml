@@ -15,6 +15,6 @@ services:
     ports:
       - 6200:6200
     volumes:
-      - ./container_trips/step:/vagrant
+      - ./volume:/vagrant
     environment:
       - "CPORT=6200"
