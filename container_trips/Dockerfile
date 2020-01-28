@@ -1,7 +1,7 @@
 FROM veyorokonwsri/trips:latest
 
 # Go to $TRIPS_BASE/src and install TRIPS
-COPY ./trips /vagrant
+COPY ./step /vagrant
 
 WORKDIR /vagrant/src
 
