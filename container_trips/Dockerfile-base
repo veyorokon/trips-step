@@ -1,0 +1,112 @@
+FROM alpine:3.7 as builder
+
+WORKDIR /portage
+
+ARG SNAPSHOT="portage-latest.tar.xz"
+ARG DIST="https://ftp-osl.osuosl.org/pub/gentoo/snapshots"
+ARG SIGNING_KEY="0xEC590EEAC9189250"
+
+RUN apk add --no-cache ca-certificates gnupg tar wget xz \
+ && wget -q "${DIST}/${SNAPSHOT}" "${DIST}/${SNAPSHOT}.gpgsig" "${DIST}/${SNAPSHOT}.md5sum" \
+ && gpg --list-keys \
+ && echo "standard-resolver" >> ~/.gnupg/dirmngr.conf \
+ && echo "honor-http-proxy" >> ~/.gnupg/dirmngr.conf \
+ && echo "disable-ipv6" >> ~/.gnupg/dirmngr.conf \
+ && gpg --keyserver hkps://keys.gentoo.org --recv-keys ${SIGNING_KEY} \
+ && gpg --verify "${SNAPSHOT}.gpgsig" "${SNAPSHOT}" \
+ && md5sum -c ${SNAPSHOT}.md5sum \
+ && mkdir -p var/db/repos var/cache/binpkgs var/cache/distfiles \
+ && tar xJpf ${SNAPSHOT} -C var/db/repos \
+ && mv var/db/repos/portage var/db/repos/gentoo \
+ && rm ${SNAPSHOT} ${SNAPSHOT}.gpgsig ${SNAPSHOT}.md5sum
+
+FROM gentoo/stage3-x86 as gentoo
+
+WORKDIR /
+COPY --from=builder /portage/ /
+CMD /bin/true
+VOLUME /var/db/repos/gentoo
+
+# Set flags on certain packages before installing them (mostly to eliminate
+# dependencies we don't actually need).
+#COPY trips.packages /etc/portage/package.use/trips
+#RUN mkdir -p /etc/db/repos/gentoo
+
+RUN set -eux
+COPY trips.packages /etc/portage/package.use/trips
+
+# Install packages needed by TRIPS STEP (these few will pull in ~100
+# dependencies, so it could take a while).
+# We don't use Oracle Java because it's "fetch restricted", meaning the
+# user must manually download the package from the website before Gentoo
+# will install it, for legal reasons.
+# Note that ":8" selects the version of icedtea-bin that is in slot 8,
+# which corresponds to Java 1.8, and icedtea 3. Slots are Gentoo's way of
+# being able to install multiple versions of the same package with
+# different APIs simultaneously. But here we're using it to get around the
+# fact that Gentoo is confused because 3 > 7 in crazy Java land.
+# Also note that while gentoo already has python installed (portage is
+# written in python), it doesn't have the sqlite USE flag set by default,
+# so we need to reinstall it here.
+
+RUN emerge dev-vcs/cvs
+RUN emerge dev-vcs/git
+RUN emerge dev-java/icedtea-bin:8
+RUN emerge dev-lang/ruby
+RUN emerge dev-perl/DBD-SQLite
+RUN emerge dev-lang/python
+RUN emerge dev-python/pip
+
+#RUN emerge media-gfx/graphviz
+#RUN emerge dev-lisp/sbcl
+
+
+FROM alpine:3.4 as graphviz
+RUN apk add --update --no-cache \
+   graphviz \
+   ttf-freefont
+
+COPY --from=gentoo / /
+
+FROM daewok/lisp-devel
+COPY --from=graphviz / /
+
+RUN mkdir -p /usr/local/share && chmod a+w /usr/local/share
+
+# Go there and fetch the dependencies from the web, unpacking as needed.
+RUN cd /usr/local/share
+
+# Make subdirectories for the rest of the dependencies, because that's what
+# configure expects.
+RUN mkdir /usr/local/share/wordnet
+RUN mkdir /usr/local/share/geonames
+RUN mkdir /usr/local/share/stanford-corenlp
+
+# WordNet 3.0, with glosstags
+# Note that we could get WordNet from Gentoo, but it doesn't include
+# glosstags, and isn't in a location that configure expects.
+RUN cd /usr/local/share/wordnet &&  \
+  wget "http://wordnetcode.princeton.edu/3.0/WordNet-3.0.tar.bz2"  &&  \
+  wget "http://wordnetcode.princeton.edu/glosstag-files/WordNet-3.0-glosstag.tar.bz2" && \
+  tar -jxf WordNet-3.0.tar.bz2 && \
+  tar -jxf WordNet-3.0-glosstag.tar.bz2
+
+
+# US geographic names database
+# Note: no need to unpack NationalFile.zip.
+RUN cd /usr/local/share/geonames && \
+  export geonames_date=`date +'%Y-%m-%d'` && \
+  mkdir $geonames_date && \
+  wget "http://geonames.usgs.gov/docs/stategaz/NationalFile.zip" \
+    -O $geonames_date/NationalFile.zip
+
+# Stanford CoreNLP
+RUN cd /usr/local/share/stanford-corenlp && \
+  wget "http://nlp.stanford.edu/software/stanford-corenlp-full-2018-10-05.zip" && \
+  unzip stanford-corenlp-full-2018-10-05.zip
+
+# Go to $TRIPS_BASE/src and install TRIPS
+COPY ./trips /vagrant
+
+# Make a directory for running TRIPS from and keeping the logs.
+RUN mkdir -p /vagrant/logs

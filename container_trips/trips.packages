@@ -1,0 +1,4 @@
+dev-java/icedtea-bin -alsa -cjk -cups -gtk -webstart
+media-gfx/graphviz svg -cairo
+media-libs/gd truetype jpeg png fontconfig
+dev-lang/python sqlite
